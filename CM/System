@@ -1,0 +1,1476 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+// My Class Decoding Encoding
+using System.Security.Cryptography;
+using System.Windows.Forms;
+
+namespace NaVeOl_Cripto
+{
+    internal class MCDE
+    {
+
+        internal class BitCounter
+        {
+            public static byte Bit1CountOfByte(byte Digit)// Count the number "1" in byte
+            {
+                byte count = 0;
+                for (int i = 0; i < 8; i++)
+                {
+                    if ((Digit >> i) % 2 == 1)
+                        count++;
+                }
+                return count;
+            }
+            public static byte Bit1CountOfUint32(uint Digit)// Count the number "1" in uint 32
+            {
+                byte count = 0;
+                for (int i = 0; i < 32; i++)
+                {
+                    if ((Digit >> i) % 2 == 1)
+                        count++;
+                }
+                return count;
+            }
+            public static byte Bit1CountOfUlong64(ulong Digit)// Count the number "1" in ulong 64
+            {
+                byte count = 0;
+                for (int i = 0; i < 64; i++)
+                {
+                    if ((Digit >> i) % 2 == 1)
+                        count++;
+                }
+                return count;
+            }
+        }
+        internal class Files
+        {
+            public static byte[] ReadBlockFromFile(string filePath, long offset, int blockSize = 512)
+            {
+                using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                {
+                    var buffer = new byte[blockSize];
+                    fileStream.Seek(offset, SeekOrigin.Begin);
+                    var bytesRead = fileStream.Read(buffer, 0, blockSize);
+                    if (bytesRead == blockSize)
+                    {
+                        return buffer;
+                    }
+                    else if (bytesRead > 0)
+                    {
+                        var result = new byte[bytesRead];
+                        Array.Copy(buffer, result, bytesRead);
+                        return result;
+                    }
+                    else
+                    {
+                        return null;
+                    }
+                }
+            }
+            // Function 2 write data block (256 bytes) from filePath, initial position of the block in file offset
+            public static void WriteBlockToFile(string filePath, byte[] block, long offset, int blockSize = 512)
+            {
+                using (var fileStream = new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.Write))
+                {
+                    var buffer = new byte[blockSize];
+                    if (block.Length == blockSize)
+                    {
+                        buffer = block;
+                    }
+                    else if (block.Length < blockSize)
+                    {
+                        Array.Copy(block, buffer, block.Length);
+                    }
+                    else
+                    {
+                        Array.Copy(block, buffer, blockSize);
+                    }
+                    fileStream.Seek(offset, SeekOrigin.Begin);
+                    fileStream.Write(buffer, 0, blockSize);
+                }
+            }
+            public static String OpenDialog(string Title, int p = 0)
+            {
+                using (OpenFileDialog openFileDialog = new OpenFileDialog())
+                {
+                    //openFileDialog.InitialDirectory = "c:\";
+                    if (p == 1) openFileDialog.Filter = "NaVeOl Eco files (*.nvl)|*.nvl|All files (*.*)|*.*";
+                    //openFileDialog.FilterIndex = 2;
+                    //openFileDialog.RestoreDirectory = true;
+                    openFileDialog.Title = Title;
+
+                    if (openFileDialog.ShowDialog() == DialogResult.OK)
+                    {
+                        //Get the path of specified file
+                        return openFileDialog.FileName;
+                    }
+                    else { return ""; };
+                }
+            }
+
+            public static String SaveDialog(string Title)
+            {
+                using (SaveFileDialog saveFileDialog = new SaveFileDialog())
+                {
+                    //openFileDialog.InitialDirectory = "c:\\";
+                    //openFileDialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
+                    //openFileDialog.FilterIndex = 2;
+                    //openFileDialog.RestoreDirectory = true;
+                    saveFileDialog.Title = Title;
+                    if (saveFileDialog.ShowDialog() == DialogResult.OK)
+                    {
+                        //Get the path of specified file
+                        return saveFileDialog.FileName;
+                    }
+                    else { return ""; };
+                }
+            }
+            /// <summary>
+            /// Complements the RND file to a multiplicity of 512 and 
+            /// adds another 1 of 512 blocks 
+            //// and includes hiding the length of the source file into RND blos.
+            /// Random block generates but does not write but saves to global variable
+            /// </summary>
+            /// <param name="b"></param>
+            /// <param name="fileName"></param>
+            public static long FileResize(string fileName)
+            {
+                // get and calculation info
+                FileInfo info = new FileInfo(fileName);
+                long size = info.Length; // original file length
+                GlobalVariable.SizeSourceFile = size;
+                long NBlocks = size / 512; // number of integer blocks in the file
+                int EndTail = (int)(size - NBlocks * 512); // non-multiple 512 remainder - tail
+                int Tail_Add = 512 - EndTail; // length of the piece to be added to the tail up to an integer block
+                                                            // generate the tail 
+                byte[] data = new byte[Tail_Add]; // declare an array to add to the tail up to an integer block
+                Randomize.RndTime1(data); // generate it
+                                                       // generate another 512 block to add
+                byte[] RndKey = new byte[512];
+                Randomize.RndTime1(RndKey);
+                // decompose long into a byte array
+                byte[] SizeByte = BitConverter.GetBytes(size);
+                // Hide bytes in the last block
+                for (long i = 0; i < SizeByte.LongLength; i++)
+                //for the inverse function - rearrange A=B^C <-> B=A^C
+                { RndKey[i * i + 7] = (byte)(SizeByte[i] ^ RndKey[i + 87]); };
+                // Open the file using FileStream and specify that we want to open the file for appending. 
+                using (FileStream fs = new FileStream(fileName, FileMode.Append))
+                {
+                    fs.Write(data, 0, Tail_Add);
+                    //fs.Write(RndKey, 0, 512); /// !!!! do not write to the source RNA, but only to the destination RNA.
+                } // Write the bytes to the end of the file fs.Write(data, 0, data.Length); }
+
+                GlobalVariable.SizeTail = EndTail;
+                GlobalVariable.SizeTail_Add = Tail_Add;
+                GlobalVariable.EndRndBlock = RndKey;
+
+
+                return size;
+            }
+
+
+            /// <summary>
+            /// Complements the RND file to a multiplicity of 512 and 
+            /// adds another 1 512 blocks 
+            //// and includes the length of the source STREAM in it.
+            /// </summary>
+            /// <param name="b"></param>
+            /// <param name="fileName"></param>
+            /* *** Needs to be added, but the idea is to not touch the source file
+             //using System.IO;
+
+                byte[] dataArray = { 0x01, 0x02, 0x03 };
+             public static long StreamResize(string fileName)   
+                using (FileStream fs = new FileStream("test.dat", FileMode.Append)) {
+                    fs.Write(dataArray, 0, dataArray.Length); // Append the byte array to the file stream  
+                }
+             */
+
+            public static byte[] FileToMD5(string filename)
+            {// find the hash of the key file
+                using (var md5 = MD5.Create())
+                {
+                    using (var stream = File.OpenRead(filename))
+                    {
+                        return md5.ComputeHash(stream);
+                    }
+                }
+            }
+        }
+        // Global variables
+        internal class GlobalVariable
+        {
+            public static bool demoVer = true;
+            public static string currentDirectory = @"C:\";//*****
+            public static string directoryEco = @"C:\NaVeOl_ECO\";
+            public static string directoryEcoOut = @"C:\NaVeOl_ECO_out\";
+            public static long SizeSourceFile;
+            public static int SizeTail; // how much tail 
+            public static int SizeTail_Add;// how much to add
+            public static byte[] EndRndBlock = new byte[512];// the last random block with the length of the source file stitched into it
+            public static byte[] FK = new byte[256]; // FK to delay the program by unnecessary calculation
+        }
+        internal class Keys
+        {
+            public static string Pas_strech(string a)
+            {
+                if (a == "") a = ".";
+                const int szPas = 32;
+                byte[] R = new byte[szPas];
+                byte[] L = new byte[szPas];
+                int i, s = 1, p = 1, y = 1; int a_len = a.Length;
+
+                for (i = 0; i != a_len; i++)
+                {
+                    s += a[i];
+                    p *= a[i];
+                    y += a[i] * 7 * i;
+                }
+                L[0] = (byte)(a[0] * s + p);
+                for (i = 1; i != szPas; i++)
+                    L[i] = (byte)((L[i - 1] ^ 715959500) * s * (byte)a[i % a_len] * i + (p + 1 + L[i - 1]) * i + y);
+                for (i = 0; i != szPas; i++) R[i] = (byte)(L[i] % szPas);
+                string rez = "";
+                for (i = 0; i != szPas; i++)
+                {
+                    R[i] = (byte)((R[i] % 26) + 65); // character restrictions - only LARGE LATs
+                    rez += (char)(R[i]);
+                }
+                return rez;
+            }// Let's stretch the password to 32 LARGE LATIN characters
+            public static byte[] StrechArray_byte512(byte[] a)
+            {
+
+                if (a.Length == 0) { a = Randomize.RndConst1(314159265, 512); };
+                byte[] L = new byte[512];
+                int i, s = 1, p = 1, y = 1;
+                int a_len = a.Length;
+
+                for (i = 0; i != a_len; i++)
+                {
+                    s += a[i];
+                    p *= a[i];
+                    y += a[i] * 7 * i;
+
+                }
+                L[0] = (byte)(a[0] * s + p);
+                for (i = 1; i != 512; i++)
+                {
+                    L[i] = (byte)((L[i - 1] ^ 715959500) * s * a[i % a_len] * i + (p + 1 + L[i - 1]) * i + y);
+                };
+
+                a = Randomize.RndConst1(a[0], 512);// *** For small a<8 there may be an error.
+                for (i = 0; i != 512; i++)
+                {
+                    L[i] = (byte)(~L[i] ^ a[i]);
+                }
+
+
+                return L;
+            }
+
+            public static byte[] Pas_strechToArray512(string a)
+            {
+                if (a == "") { a = "Qwo0ck$8983jknsdlllsijjanz,x.ee!)^7f&?"; }
+                else { a = a + "Qwo0ck$8983jknsdlllsijjanz,x.ee!)^7f&?" + Convert.ToString(a.Length * a.Max()); };
+                const int szPas = 512;
+                byte[] L = new byte[szPas];
+                int i, s = 0xBAC356A, p = 0xABAC653, y = 0xFED1247; int a_len = a.Length;
+
+                for (i = 0; i != a_len; i++)
+                {
+                    s += a[i];
+                    p *= a[i];
+                    y += a[i] * 7 * i;
+                }
+                L[0] = (byte)(a[0] * s + p);
+                for (i = 1; i != szPas; i++)
+                    L[i] = (byte)((L[i - 1] ^ 715959500) * s * (byte)a[i % a_len] * i + (p + 1 + L[i - 1]) * i + y);
+                for (i = 0; i != (szPas - 3); i++) { L[i] = (byte)(L[i] * L[i + 1] / (L[i + 2] + 1)); }
+
+                return L;
+            }// Let's stretch the password to 512 bytes
+             //public static byte[] KeySeed()
+
+            public static byte[] KeyFresh5(byte[] data)
+            {
+                for (int i = 0; i < data.Length - 1; i++)
+                {
+                    data[i] = (byte)(~data[i] ^ data[data.Length - i - 1] + data[i + 1]);
+                    data[i] = Roling.ROR_QQQShift((byte)~data[i], (byte)(i % 7 + 1));
+                }
+                return data;
+            }
+
+        } // work with keys
+
+
+        internal class Mix
+        {
+            public struct Var2x64 // structure for bit exchange
+            {
+                public ulong A;
+                public ulong B;
+            };
+            public struct Var2x32
+            {
+                public uint A;
+                public uint B;
+            };
+            public static Var2x64 MixK(Var2x64 Mix, ulong K)
+            {
+                ulong Ai = Mix.A & K;
+                ulong Bii = Mix.B & K;
+                K = ~K;
+                //K ^= 0xffffffffffffffffffffffffffffffffffffff;
+                ulong Aii = Mix.A & K;
+                ulong Bi = Mix.B & K;
+                Mix.B = Ai | Bi;
+                Mix.A = Aii | Bii;
+                return Mix;
+
+            }// Exchange of bits by the key int64 <-> Int64
+            public static Var2x32 MixK(Var2x32 Mix, uint K) // Exchange bits by key int32 <-> Int32
+            {
+                uint Ai = Mix.A & K;
+                uint Bii = Mix.B & K;
+                K = ~K;
+                uint Aii = Mix.A & K;
+                uint Bi = Mix.B & K;
+                Mix.B = Ai | Bi;
+                Mix.A = Aii | Bii;
+                return Mix;
+
+                /* Usage Description :
+                Symmetric function of bit-key exchange between two int32 variables
+                Var2x64 Mix,MixA;
+                Mix.A = 0xffffffffffffff;
+                Mix.B = 0x00000000;
+                richTextBox1.AppendText(Convert.ToString(Mix.A) + " " + Convert.ToString(Mix.B) + "\r\n");
+
+                MixA = MixK(Mix, 0xFFFFFF0000);
+                richTextBox1.AppendText(Convert.ToString(MixA.A)+ " " + Convert.ToString(MixA.B) + "\r\n");
+
+                Mix = MixK(MixA, 0xFFFFFF0000);
+
+                richTextBox1.AppendText(Convert.ToString(Mix.A) + " " + Convert.ToString(Mix.B) + "\r\n");
+                */
+            }
+            public static ulong RearrangeBits(ulong number)
+            {
+                ulong even_bits = number & 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA;
+                ulong odd_bits = number & 0x5555555555555555555555555555555555;
+
+                even_bits >>= 1;
+                odd_bits <<= 1;
+
+                return (even_bits | odd_bits);
+            }// rearranges even and odd bits of int64 comb 0101
+            public static uint RearrangeBits(uint number)
+            {
+                uint even_bits = number & 0xAAAAAAAAAAAAAA;
+                uint odd_bits = number & 0x555555555555;
+
+                even_bits >>= 1;
+                odd_bits <<= 1;
+
+                return (even_bits | odd_bits);
+            }// rearranges even and odd bits of int32 comb 0101
+            public static uint MixBits6R(uint number)
+            {
+                uint even_bits = number & 0xAAAAAAAAAAAAAA;
+                uint odd_bits = number & 0x555555555555;
+                even_bits = MCDE.Roling.ROR_QQQShift(even_bits, 6);
+                return (even_bits | odd_bits);
+            }// rearranges the even and odd bits of int32 by 6 positions to the right comb 0101
+            public static uint MixBits6L(uint number)
+            {
+                uint even_bits = number & 0xAAAAAAAAAAAAAA;
+                uint odd_bits = number & 0x555555555555;
+                even_bits = MCDE.Roling.ROL_QQQShift(even_bits, 6);
+                return (even_bits | odd_bits);
+            }// rearranges the even and odd bits of int32 by 6 positions in the left side of the comb 0101
+            public static uint MixBits1R(uint number)
+            {
+                uint even_bits = number & 0xCCCCCCCCCCCC;
+                uint odd_bits = number & 0x3333333333;
+                even_bits = MCDE.Roling.ROR_QQQShift(even_bits, 2);
+                return (even_bits | odd_bits);
+            }// rearranges the even and odd bits of int32 by 2 positions to the right comb 1100
+            public static uint MixBits1L(uint number)
+            {
+                uint even_bits = number & 0x3333333333;
+                uint odd_bits = number & 0x3333333333;
+                even_bits = MCDE.Roling.ROL_QQQShift(even_bits, 2);
+                return (even_bits | odd_bits);
+            }// rearranges the even and odd bits of int32 by 2 positions in leo comb 1100
+            public static uint MixBits2R(uint number, byte K1, byte K2)
+            {
+                uint M = (uint)((K1 * 256 + K1) * 256 + K1) * 256 + K1; // make a pattern F(x) from the key
+                byte Sh = (byte)((K2 % 3 + 1) * 8); // shift F(x) from the key
+                uint even_bits = number & M;
+                uint odd_bits = number & ~M;
+                even_bits = MCDE.Roling.ROR_QQQShift(even_bits, Sh);
+                return (even_bits | odd_bits);
+            }// rearranges int32 bits by key
+            public static uint MixBits2L(uint number, byte K1, byte K2)
+            {
+                uint M = (uint)((K1 * 256 + K1) * 256 + K1) * 256 + K1; // make a pattern F(x) from the key
+                byte Sh = (byte)((K2 % 3 + 1) * 8); // shift F(x) from the key
+                uint even_bits = number & M;
+                uint odd_bits = number & ~M;
+                even_bits = MCDE.Roling.ROL_QQQShift(even_bits, Sh);
+                return (even_bits | odd_bits);
+            }// rearranges int32 bits by key 
+            public static byte FlipByte(int Digt)
+            {
+                int B = Digt & 0x0f;
+                int A = Digt & 0xf0;
+                B <<= 4;
+                A >>= 4;
+                return Convert.ToByte(A | B);
+            }// 0000 <-> 1111 exchange 4 bit Hi and Lo
+            public static uint CODE32(uint A, uint K1, uint K2)
+            {
+                A ^= K1;
+                A = MCDE.Roling.ROR_QQQShift(~A, (byte)(K2 % 31));
+                RearrangeBits(A);
+                A ^= K1;
+                A = MixBits6R(A);
+                return A + K2;
+            }
+            public static uint UnCODE32(uint A, uint K1, uint K2)
+            {
+                A -= K2;
+                A = MixBits6L(A);
+                A ^= K1;
+                RearrangeBits(A);
+                A = MCDE.Roling.ROL_QQQShift(~A, (byte)(K2 % 31));
+                A ^= K1;
+                return A;
+
+            }
+
+            public static byte EncodeROL5_QQ(byte number, byte[] MAT5)
+            {// Don't load!!!! But it is obligatory to check shift = 1..7
+                // degree, to ones, shift forward
+                // transfer bit pattern
+                // Copy bits going to <-overflow, move the transferred part to the right
+                byte buff = (byte)((number & 0b11111000) >> 3);
+                // replace index->number
+                buff = MAT5[buff];
+                // and the intolerable one to the left 
+                return (byte)(buff + (number << 5));
+            }
+            public static byte DecodeROR5_QQ(byte number, byte[] MATi5)
+            {// Don't load!!!! But it is obligatory to check shift = 1..7
+                // transfer bit pattern
+                byte buff = (byte)(number & 0b11111); // Copy bits going to ->overflow
+                // recover index->number value via inverse MATi
+                buff = MATi5[buff];
+                // move the transferable part to the left and the non-transferable part to the right. 
+                return (byte)((buff << 3) + (number >> 5));
+
+            }
+        }
+        internal class NaVeOl
+        {
+            public static byte Lower() // Programme slowdown in Profesional - disabled
+            {
+                if (GlobalVariable.demoVer) // DemoVer 
+                {
+                    for (int i = 0; i < 256; i++)
+                    {
+                        #region // Demo //K=2.16  
+                        for (int k = 0; k < 4; k++)
+                        {
+                            GlobalVariable.FK[i] = (byte)(GlobalVariable.EndRndBlock[i]
+                            / 5.15 * 9.85);
+                        }
+                        #endregion
+                    }
+                }
+                else //release Version 2 Version 2 professional
+                {
+                    //for (int i = 0; i < 256; i++)
+                    //{
+                    // #region // Master //K=1.23 
+                    // GlobalVariable.FK[i] = (byte)(GlobalVariable.EndRndBlock[i]
+                    // / 5.15 * 9.85);//Master //K=1.23 
+                    // #endregion
+                    // #region //Bat BAsic //K=1.6  
+                    // //for (int k = 0; k < 1; k++)
+                    // //{
+                    // // // GlobalVariable.FK[i] = (byte)(GlobalVariable.EndRndBlock[i]
+                    // // / / 5.15 * 9.85 + GlobalVariable.FK[i]);
+                    // //}
+                    // #endregion
+                    //}
+
+                }
+
+                return 222;
+            }
+
+
+
+
+
+
+            /// <summary>
+            /// Replaces the 7 lowest bits in a byte with the numbers 
+            //// from the MAT by index, and leaves the highest bit unchanged. 
+            /// Then the half-byte permutation function is applied. 
+            /// Then again replaces the 7 lower bits in the byte 
+            /// with the numbers from the MAT by index, 
+            //// and leaves the higher bit unchanged.
+            /// </summary>
+            /// <param name="data"></param>
+            /// <param name="MAT1"></param>
+            /// <param name="MAT2"></param>
+            /// <returns></returns>
+            public static byte[] Encoding_IQ(byte[] data, byte[] MAT)
+            {
+                //Code data input by IQ method, MAT
+                for (int i = 0; i < data.Length; i++)
+                {// Exchange 7 low-order bits of two numbers in an array // you can't reduce - you need an exchange buffer
+                    byte C = (byte)(data[i] & 127); //select 7 bits from 1
+                    byte D = (byte)(data[MAT[i]] & 127); //select 7 bits from 2 
+                    data[i] &= 128; // 7 bits cleared
+                    data[MAT[i]] &= 128; // 7 bits cleared
+                    // exchanged
+                    data[i] |= D;
+                    data[MAT[i]] |= C;
+
+                };
+                return data;
+            }
+
+
+            /// <summary>
+            /// Replace the number with its index
+            /// </summary>
+            /// <param name="data"></param>
+            /// <param name="MAT"></param>
+            /// <returns></returns>
+            public static byte[] Encoding_IQ2(byte[] data, byte[] MAT)
+            {
+                //Code by IQ2 method input data, MATi
+                for (int i = 0; i < data.Length; i++)
+                {// replace the number with its index
+                    data[i] = MAT[data[i]];
+                };
+                return data;
+            }
+            /// <summary>
+            /// replace the index with the corresponding number
+            /// </summary>
+            /// <param name="data"></param>
+            /// <param name="MATi"></param>
+            /// <returns></returns>
+            public static byte[] Decoding_IQ2(byte[] data, byte[] MATi)
+            {
+                //Code by IQ2 method input data, MATi
+                for (int i = 0; i < data.Length; i++)
+                {// replace the number with its index
+                    data[i] = MATi[data[i]];
+                };
+                return data;
+
+            }
+
+
+            /// <summary>
+            /// Replaces the 7 lowest bits in a byte with the numbers 
+            //// from the MAT by index, and leaves the highest bit unchanged. 
+            /// Then the half-byte permutation function is applied. 
+            /// Then again replaces the 7 lower bits in the byte 
+            /// with the numbers from the MAT by index, 
+            //// and leaves the higher bit unchanged.
+            /// </summary>
+            /// <param name="data"></param>
+            /// <param name="MAT1"></param>
+            /// <param name="MAT2"></param>
+            /// <returns></returns>
+            public static byte[] Encoding_I(byte[] data, byte[] MAT1, byte[] MAT2)
+            {
+                //Code the input data, MAT1, MAT2 by method I
+                for (int i = 0; i < data.Length; i++)
+                {// replace 7 low-order bits of the number with the index of one of the MAT tables, leave the high-order bit
+                    if ((data[i] & 128) > 0)
+                    { data[i] = NaVeOl.MatIndx2Num(data[i], MAT1); }
+                    else { data[i] = NaVeOl.MatIndx2Num(data[i], MAT2); }
+                };
+                // swap half bytes in the byte
+                for (int i = 0; i < data.Length; i++) { data[i] = Mix.FlipByte(data[i]); };
+
+                // encode again
+                for (int i = 0; i < data.Length; i++)
+                {// replace 7 low-order bits of the number with the index of one of the MAT tables, leave the highorder bit
+                    if ((data[i] & 128) > 0)
+                    { data[i] = NaVeOl.MatIndx2Num(data[i], MAT1); }
+                    else { data[i] = NaVeOl.MatIndx2Num(data[i], MAT2); }
+                };
+                return data;
+            }
+            /// <summary>
+            /// Decoding = Encoding only It is necessary 
+            /// to prepare MAT 1 and MA2 for decoding 
+            /// using the functions
+            /// MAT1 =NaVeOl.MatTableReplaceIndx2Num(MAT1);
+            /// MAT2=NaVeOl.MatTableReplaceIndx2Num(MAT2);
+            /// </summary>
+            /// <param name="data"></param>
+            /// <param name="MAT1"></param>
+            /// <param name="MAT2"></param>
+            /// <returns></returns>
+            public static byte[] Decoding_I(byte[] data, byte[] MAT1, byte[] MAT2)
+            { // don't forget to flip the MAT1 MAT2 tables by replacing values with indices and vice versa     
+                return Encoding_I(data, MAT1, MAT2);
+            }
+            /// <summary>
+            /// Look for the index and replace it with the value from the table
+            /// </summary>
+            /// <param name="data"></param>
+            /// <param name="MAT8"></param>
+            /// <returns></returns>
+            public static byte[] Encoding_II(byte[] data, byte[] MAT8)
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    data[i] = MAT8[data[i]];
+                }
+                return data;
+            }
+            /// <summary>
+            /// Look for the index and replace it with the value from the table
+            /// But first the tables need to be flipped by swapping indices and values
+            /// </summary>
+            /// <param name="data"></param>
+            /// <param name="MAT8"></param>
+            /// <returns></returns>
+            public static byte[] Decoding_II(byte[] data, byte[] MAT8)
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    data[i] = MAT8[data[i]];
+                }
+                return data;
+            }
+            /// <summary>
+            /// Pseudo-random permutation of MAT table numbers
+            /// </summary>
+            /// <param name="MAT"></param>
+            /// <param name="seed"></param>
+            /// <returns></returns>
+            public static byte[] FreshMAT(byte[] MAT, int seed)// 1.7 s/18Mb
+            {
+
+
+                List<byte> numbers = new List<byte>(MAT.Length);
+                for (int i = 0; i < MAT.Length; i++)
+                {
+                    numbers.Add(MAT[i]);
+                }
+
+                byte[] result = new byte[MAT.Length];
+                Random random = new Random(seed);
+                for (int i = 0; i < MAT.Length; i++)
+                {
+                    int index = random.Next(numbers.Count);
+                    result[i] = numbers[index];
+                    numbers.RemoveAt(index);
+                }
+                //
+                return result;
+            }
+            public static byte[] FreshQMAT(byte[] MAT, int varSeed)// 1.7 s/18Mb
+            {
+                switch ((varSeed + MAT[(byte)varSeed])) & 15)
+                {
+                    case 0:
+                        Array.Reverse(MAT);
+                        break;
+                    Case 1:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = (byte)~MAT[i];
+                        }
+                        break;
+                    Case 2:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = (byte)(MAT[i] ^ 181);
+                        }
+                        break;
+                    Case 3:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = (byte)(MAT[i] ^ 91);
+                        }
+                        break;
+                    Case 4:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = (byte)(MAT[i] ^ 203);
+                        }
+                        break;
+                    Case 5:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = Roling.ROR_QQQShift(MAT[i], 1);
+                        }
+                        break;
+                    Case 6:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = Roling.ROR_QQQShift(MAT[i], 4);
+                        }
+                        break;
+                    Case 7:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = Roling.ROR_QQQShift(MAT[i], 5);
+                        }
+                        break;
+                    Case 8:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] = Roling.ROL_QQQShift(MAT[i], 3);
+                        }
+                        break;
+                    Case 9:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] += 191;
+                        }
+                        break;
+                    Case 10:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] += 244;
+                        }
+                        break;
+                    Case 11:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] += 111;
+                        }
+                        break;
+                    Case 12:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] += 45;
+                        }
+                        break;
+                    Case 13:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] += 14;
+                        }
+                        break;
+                    case 14:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] += 86;
+                        }
+                        break;
+
+                    Default:
+                        for (int i = 0; i < MAT.Length; i++)
+                        {
+                            MAT[i] += 77;
+                        }
+                        break;
+                }
+                //
+                return MAT;
+            }
+
+            /// <summary>
+            /// Fast Pseudo-random permutation 
+            /// of an arbitrary CLUCH table 
+            /// </summary>
+            /// <param name="MAT"></param>
+            /// <param name="seed"></param>
+            /// <returns></returns>
+            public static byte[] FreshQKey(byte[] Key5, int seed) // 1.8s/18Mb
+            {
+                List<byte> numbers = new List<byte>(Key5.Length);
+                for (int i = 0; i < Key5.Length; i++)
+                {
+                    numbers.Add(Key5[i]);
+                }
+
+                byte[] result = new byte[Key5.Length];
+                Random random = new Random(seed);
+                for (int i = 0; i < Key5.Length; i++)
+                {
+                    int index = random.Next(numbers.Count);
+                    result[i] = numbers[index];
+                    numbers.RemoveAt(index);
+                }
+                //
+                return result;
+            }
+            public static byte[] FreshQQKey(byte[] Key5, byte[] MAT, int seed) // s/18Mb
+            {
+                Key5.Reverse();
+                for (int i = 0; i < 256; i++)
+                {
+                    Key5[i] = (byte)(Key5[i] + Key5[i + 127] + MAT[255 - i]);
+                }
+
+
+                //
+                return Key5;
+            }
+            public static byte[] TransposeMatrix64bit8byteArray(byte[] b)// 0.04s/18Mb
+            {
+                ////if ((b.Length > 8) | (b.Length < 8)) { MessageBox.Show("b.Length array only 8 byte!"); }
+                // NaVeOl conversion //RearrangeBits
+                ulong A;
+                A = BitConverter.ToUInt64(b, 0);
+                ulong v = Roling.TransposeBitMatrix(A);
+                A = v;
+                return BitConverter.GetBytes(A);
+            }
+            public static byte[] EnCodeTransposeMatrix64bit8byteArrayAndBitPermutation(byte[] b)
+            {
+                ////if ((b.Length > 8) | (b.Length < 8)) { MessageBox.Show("b.Length array only 8 byte!"); }
+                ////// NaVeOl conversion //RearrangeBits
+                ulong A;
+
+                A = BitConverter.ToUInt64(b, 0);
+                ulong v = MCDE.Roling.TransposeBitMatrix(A);
+                A = Mix.RearrangeBits(v);
+                return BitConverter.GetBytes(A);
+            }
+            public static byte[] DeCodeTransposeMatrix64bit8byteArrayAndBitPermutation(byte[] b)
+            {
+                ////if ((b.Length > 8) | (b.Length < 8)) { MessageBox.Show("b.Length array only 8 byte!"); }
+                // NaVeOl conversion //RearrangeBits
+                ulong A;
+
+                A = BitConverter.ToUInt64(b, 0);
+                ulong v = Mix.RearrangeBits(A);
+                A = MCDE.Roling.TransposeBitMatrix(v);
+
+                return BitConverter.GetBytes(A);
+            }
+            public static byte[] GenMat7bit(int seed)
+            {
+                byte[] MAT = new byte[128];
+                MAT = Randomize.SeedGenerateUniqueRandomNumbers(128, seed);
+                return MAT;
+            }//New MAT 7 bit
+            public static byte[] GenMat8bit(int seed)
+            {
+                byte[] MAT = new byte[256];
+                MAT = Randomize.SeedGenerateUniqueRandomNumbers(256, seed);
+                return MAT;
+            }//New MAT 8 bit
+
+            public static byte[] GenMat6bit(int seed)
+            {
+                byte[] MAT = new byte[64];
+                MAT = Randomize.SeedGenerateUniqueRandomNumbers(64, seed);
+                return MAT;
+            }//New MAT 6 bit
+            public static byte[] GenMat5bit(int seed)
+            {
+                byte[] MAT = new byte[32];
+                MAT = Randomize.SeedGenerateUniqueRandomNumbers(32, seed);
+                return MAT;
+            }//New MAT 6 bit
+
+            //public static byte Mat7Num2IndxFlip(byte num, byte[] MAT)
+            //{ num =(byte)(num & 127);
+            // for (int i = 0; i < MAT.Length; i++) { if (MAT[i] == num) { num = (byte)i ;break; } };
+            // return num;
+            //}//Used MAT 7 bit EnChange 1 byte number2index
+            ////Long non Lineal Function
+            /// <summary>
+            /// EnChange indx to number from MAT 7bit
+            /// </summary>
+            /// <param name="indx"></param>
+            /// <param name="MAT"></param>
+            /// <returns></returns>
+            public static byte MatIndx2Num(byte indx, byte[] MAT)
+            {
+                //byte result;
+                //result = (byte)(indx & 127);// cut off the first bit
+                //result = MAT[result];// replaced by index
+                //result = (byte)(result | (indx & 128));// glued the high bit
+                return (byte)(MAT[(byte)(indx & 127)] | (indx & 128));
+            }
+            /// <summary>
+            /// MAT 0:2 1:0 2:1 <=> 0:1 1:2 2:0
+            /// </summary>
+            /// <param name="MAT"></param>
+            /// <returns></returns>
+            public static byte[] MatTableReplaceIndx2Num(byte[] MAT)//MAT any Length EnChange index<->number
+            {
+                byte[] result = new byte[MAT.Length];
+                for (int i = 0; i < MAT.Length; i++)
+                {
+                    result[MAT[i]] = (byte)i;
+                }
+                return result;
+            }
+
+        }
+
+        internal class Randomize
+        {
+            /// <summary>
+            /// generator psevdo randomize number
+            /// </summary>
+            /// <param name="Number"></param>
+            /// <param name="Key"></param>
+            /// <param name="Deep"></param>
+            /// <returns></returns>
+            public static uint RndConst_(uint Number, uint Key, uint Deep)
+            {
+
+
+                Deep += 11;
+                for (uint i = 0; i < Deep; i++)
+                {
+                    Key += 7;
+                    Number = (Number ^ 0xAAAA) * Key;
+                }
+                return Number;
+            }
+            public static double RndConst(int Min, int Max, int Seed)
+            {
+                // Create a new random object with the same seed value each time.  
+                Random rand = new Random(Seed);
+
+                // Generate a random number and store it in 'previous' variable.   
+                return rand.NextDouble() * (Max - Min) + Min;
+            }
+            public static byte[] RndConst1(int Seed, uint LenArray)
+            {
+
+                byte[] data = new byte[LenArray];
+                // Create a new random object with the same seed value each time.  
+                Random rand = new Random(Seed);
+                // debug - check
+                if ((Seed > 65537) | (LenArray > 1000000)) { MessageBox.Show("Very big number!"); };
+                // Generate a random number and store it in 'previous' variable.   
+                rand.NextBytes(data);
+                return data;
+            }
+            public static void RndTime1(byte[] Array)
+            {
+                //int LenArray = Array.Length;
+                RandomNumberGenerator rng = RandomNumberGenerator.Create();
+                // Generate 4 bytes of random data    
+                //byte[] data = new byte[4];
+                rng.GetBytes(Array);
+            }
+            public static byte RndTime1()
+            {
+                RandomNumberGenerator rng = RandomNumberGenerator.Create();
+                byte[] data = new byte[1];
+                rng.GetBytes(data);
+                return data[0];
+            }
+
+            /// <summary>
+            /// A byte array of length LenArray is generated 
+            /// Numbers in the range 1..255 (without 0)
+            /// The values are different for each startup
+            /// </summary>
+            /// <param name="LenArray"></param>
+            /// <returns></returns>
+            public static byte[] RndTimeNZConst(int LenArray)
+            {
+                RandomNumberGenerator rng = RandomNumberGenerator.Create();
+                // Generate 8 bytes of non-zero random data ( Non seed! ) 
+                byte[] data = new byte[LenArray];
+                rng.GetNonZeroBytes(data);
+                return data;
+            }
+
+            /// <summary>
+            /// A byte massv of length size is generated 
+            /// Numbers in the range 0..size one each 
+            /// The values are different for each startup
+            /// </summary>
+            /// <param name="size"></param>
+            /// <returns></returns>
+            public static byte[] GenerateUniqueRandomNumbers(int size)
+            {
+                ////if (size > 256)
+                ////{
+                //// MessageBox.Show("Size must be less than or equal to 256.(byte size)");
+                ////}
+
+                List<byte> numbers = new List<byte>(size);
+                for (byte i = 0; i < size; i++)
+                {
+                    numbers.Add(i);
+                }
+
+                byte[] result = new byte[size];
+                Random random = new Random();
+                for (int i = 0; i < size; i++)
+                {
+                    int index = random.Next(numbers.Count);
+                    result[i] = numbers[index];
+                    numbers.RemoveAt(index);
+                }
+
+                return result;
+            }
+
+            /// <summary>
+            /// generator absolutely randomize number
+            /// </summary>
+            /// <param name="Deep"></param>
+            /// <returns></returns>
+            public static uint RndDeep(uint Deep = 3)
+            {
+                DateTime now = DateTime.Now;
+                long bigIntegerNumber = now.Ticks;
+                uint Number = Convert.ToUInt32(bigIntegerNumber & 0xffffffffffff);
+                uint Key = MCDE.Roling.ROL_QQQShift(Number, 7);
+                uint n = Number % 10;
+                Deep += n;
+                for (uint i = 0; i < Deep; i++)
+                {
+                    Number = (Number ^ 0xAAAA) * Key;
+                }
+                return Number;
+            }
+
+            /// <summary>
+            /// Generate Seed Random Numbers size = MaxNum+1 Only Unique Numbers
+            /// Example:8 - 0..7
+            /// 64 - 0..63
+            /// 128 - 0..127
+            /// 256 - 0..255
+            /// </summary>
+            /// <param name="size"></param>
+            /// <param name="seed"></param>
+            /// <returns></returns>
+            public static byte[] SeedGenerateUniqueRandomNumbers(int size, int seed = 42)
+            {
+                byte[] data = new byte[size];
+                //
+                ////if (size > 256)
+                ////{
+                //// MessageBox.Show("Size must be less than or equal to 256.(byte size)");
+                ////}
+
+                List<byte> numbers = new List<byte>(size);
+                for (int i = 0; i < size; i++)
+                {
+                    numbers.Add((byte)i);
+                }
+
+                byte[] result = new byte[size];
+                Random random = new Random(seed);
+                for (int i = 0; i < size; i++)
+                {
+                    int index = random.Next(numbers.Count);
+                    result[i] = numbers[index];
+                    numbers.RemoveAt(index);
+                }
+
+
+
+                //
+                return result;
+            }//+++
+        }
+        /* void keyGen() 
+        {
+            byte i = 0;
+            while (true)
+            {
+                code(key[i ^ 77], key[cast(ubyte)(i + 1) ^ 77], key[i ^ cast(ubyte)(27 + i)], key[cast(ubyte)(i + 1) ^ cast(ubyte)(55 + i)], key[i ^ cast(ubyte)(114 + i)]);
+                if (i++ == 254) break;
+            }
+        }*/ // Additional confusion of the key key
+        internal class Roling
+        {
+
+
+
+            public static byte ROL_QQQShift(byte number, int shift)
+            {// Don't load!!!! But it is obligatory to check shift = 1..7
+                // degree, to ones, shift forward
+                byte bitTemplate = (byte)(((2 << shift) - 1) << (8 - shift));// bit transfer template
+                byte buff = (byte)(number & bitTemplate); // Copy bits going to <-overflow
+                // move the transferable part to the right and the non-transferable part to the left. 
+                return (byte)((buff >> (8 - shift)) + (number << shift));
+            }
+            public static byte ROR_QQQShift(byte number, int shift)
+            {// Don't load!!!! But it is obligatory to check shift = 1..7
+                // degree, in units
+                byte bitTemplate = (byte)((2 << shift) - 1);// bit transfer template
+                byte buff = (byte)(number & bitTemplate); // Copy bits going to ->overflow
+                // move the transferable part to the left and the non-transferable part to the right. 
+                return (byte)((buff << (8 - shift)) + (number >> shift));
+
+            }
+            public static uint ROL_QQQShift(uint number, int shift)
+            {// Don't load!!!! But it is obligatory to check shift = 1..31
+                // degree, to ones, shift forward
+                uint bitTemplate = ((2u << shift) - 1) << (32 - shift);// bit transfer template
+                uint buff = (number & bitTemplate); // Copy bits going to <-overflow
+                // move the transferable part to the right and the non-transferable part to the left. 
+                return (buff >> (32 - shift)) + (number << shift);
+            }
+            public static uint ROR_QQQShift(uint number, int shift)
+            {// Don't load!!!! But it is obligatory to check shift = 1..31
+                // degree, in units
+                uint bitTemplate = (2u << shift) - 1;// bit transfer template
+                uint buff = number & bitTemplate; // Copied bits going to ->overflow
+                // move the transferable part to the left and the non-transferable part to the right. 
+                return ((buff << (32 - shift)) + (number >> shift));
+
+            }
+            public static ulong ROL_QQQShift(ulong number, int shift)
+            {// Don't load!!!! But it is obligatory to check shift = 1..63
+                // degree, to ones, shift forward
+                ulong bitTemplate = ((2u << shift) - 1) << (64 - shift);// bit transfer template
+                ulong buff = (number & bitTemplate); // Copy bits going to <-overflow
+                // move the transferable part to the right and the non-transferable part to the left. 
+                return (buff >> (64 - shift)) + (number << shift);
+            }
+            public static ulong ROR_QQQShift(ulong number, int shift)
+            {// Don't load!!!! But it is obligatory to check shift = 1..31
+                // degree, in units
+                ulong bitTemplate = (2u << shift) - 1;// bit transfer template
+                ulong buff = number & bitTemplate; // Copy bits going to ->overflow
+                // move the transferable part to the left and the non-transferable part to the right. 
+                return (buff << (63 - shift)) + (number >> shift);
+
+            }
+
+
+
+
+            /// <summary>
+            /// Input byte,ushort,uint,ulong
+            /// Output boolean[8]...boolean[64]+
+            /// </summary>
+            /// <returns></returns>
+            public static Boolean[] NumberToBooleanArray(dynamic Number)
+            {
+                Type TType = Number.GetType();
+                bool[] boolArray = new bool[64];
+
+
+
+                if (TType == typeof(byte))
+                {
+                    byte b = Number; // Example byte value
+                    Array.Resize(ref boolArray, 8);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        boolArray[i] = (b & (1 << i)) != 0;
+                    }
+
+                }
+                if (TType == typeof(ushort))
+                {
+                    ushort b = Number; // Example byte value
+
+                    Array.Resize(ref boolArray, 16);
+                    for (int i = 0; i < 16; i++)
+                    {
+                        boolArray[i] = (b & (1 << i)) != 0;
+                    }
+
+                }
+                if (TType == typeof(uint))
+                {
+                    uint b = Number; // Example byte value
+
+                    Array.Resize(ref boolArray, 32);
+                    for (int i = 0; i < 32; i++)
+                    {
+                        boolArray[i] = (b & (1 << i)) != 0;
+                    }
+
+                }
+                if (TType == typeof(ulong))
+                {
+                    ulong b = Number; // Example byte value
+
+                    // Array.Resize(ref boolArray, 64);
+                    for (int i = 0; i < 64; i++)
+                    {
+                        boolArray[i] = (b & (ulong)(1 << i)) != 0;
+                    }
+
+                }
+
+
+                return boolArray;
+            }
+
+            /// <summary>
+            /// Input boolean[8]...boolean[64]
+            /// Output byte,ushort,uint,ulong
+            /// </summary>
+            /// <param name="boolArray"></param>
+            /// <returns></returns>
+
+            public static dynamic BooleanArrayToNumber(bool[] boolArray)
+            {
+                int L = boolArray.Length;
+                byte DataType = 0;
+                byte b8 = 0;
+                byte b16 = 0;
+                byte b32 = 0;
+                byte b64 = 0;
+
+
+                switch (L)
+                {
+                    case int n when n < 9:
+
+                        for (int i = 0; i < 8; i++)
+                        {
+                            if (boolArray[i])
+                            {
+                                b8 |= (byte)(1 << i);
+                            }
+                        }
+
+                        DataType = 8;
+                        break;
+                    case int n when n > 8 && n < 17:
+                        for (int i = 0; i < 16; i++)
+                        {
+                            if (boolArray[i])
+                            {
+                                b16 |= (byte)(1 << i);
+                            }
+                        }
+
+                        DataType = 16;
+                        break;
+                    case int n when n > 16 && n < 33:
+                        for (int i = 0; i < 32; i++)
+                        {
+                            if (boolArray[i])
+                            {
+                                b32 |= (byte)(1 << i);
+                            }
+                        }
+
+                        DataType = 32;
+                        break;
+                    case int n when n > 32 && n < 65:
+                        for (int i = 0; i < 64; i++)
+                        {
+                            if (boolArray[i])
+                            {
+                                b64 |= (byte)(1 << i);
+                            }
+                        }
+
+                        DataType = 64;
+                        break;
+                }
+
+                switch (DataType)
+                {
+                    Case 8:
+                        return b8;
+                        break;
+                    case 16:
+                        return b16;
+                        break;
+                    case 32:
+                        return b32;
+                        break;
+                    case 64:
+                        return b64;
+                        break;
+                    Default:
+                        return "Error Length Bollean Array";
+                }
+
+
+
+
+            }
+
+
+            public static bool[] ByteToBooleanArray(byte Number)
+            {
+                bool[] boolArray = new bool[8];
+                for (int i = 0; i < 8; i++)
+                {
+                    boolArray[i] = (Number & (1 << i)) != 0;
+                }
+                return boolArray;
+            }
+            public static byte BooleanArrayToByte(bool[] boolArray)
+            {
+                byte b8 = 0;
+                for (int i = 0; i < 8; i++)
+                {
+                    if (boolArray[i])
+                    {
+                        b8 |= (byte)(1 << i);
+                    }
+                }
+                return b8;
+            }
+
+
+            public static byte ByteToByteBitMix1(byte b)//, byte[]MAT8)
+            {
+                bool[] boolArray = new bool[8];
+                byte b8 = 0;
+                for (int i = 0; i < 8; i++)
+                {
+                    boolArray[i] = (b & (1 << i)) != 0;
+                }
+
+                ////A here's a rearrangement
+
+
+                for (int i = 0; i < 8; i++)
+                {
+                    if (boolArray[i])
+                    {
+                        b8 |= (byte)(1 << i);
+                    }
+                }
+                return b8;
+
+            } //1.56
+
+
+            public static ulong UlongToUlongBitMix1(ulong b)//, byte[]MAT8)//2.57
+            {
+                bool[] boolArray = new bool[64];
+                ulong b64 = 0;
+                for (int i = 0; i < 64; i++)
+                {
+                    boolArray[i] = (b & (1UL << i)) != 0;
+                }
+
+                ////A here's a rearrangement
+
+
+                for (byte i = 0; i < 64; i++)
+                {
+                    if (boolArray[i])
+                    {
+                        b64 |= (1UL << i);
+                    }
+                }
+                return b64;
+
+            } //1.56
+
+
+
+
+
+            public static ulong TransposeBitMatrix(ulong input)
+            {
+                ulong result = 0;
+
+                for (int i = 0; i < 8; i++)
+                {
+                    for (int j = 0; j < 8; j++)
+                    {
+                        result |= ((input >> ((i << 3) + j)) & 1) << ((j << 3) + i);
+                    }
+                }
+
+                return result;
+            }// works symmetrically
+
+            public static byte[] EncodeTransposeBitMatrix(byte[] input)
+            {
+                byte[] result = new byte[8];
+                int RNA = 0;
+                ulong DNA = 0;
+
+                for (int i = 0; i < 8; i++)
+                {
+                    RNA = RNA >> 1;
+                    RNA = RNA + (input[i] & 128); //first bits collected in byte
+                }
+                for (int i = 0; i < 8; i++)
+                {
+                    DNA = DNA << 7;
+                    DNA = DNA + (ulong)(input[i] & 127); //7 low-order bits collected in byte
+                }
+
+
+                DNA = (DNA << 8) + (ulong)RNA; // NaVeOl encoding result added to 8 byte array
+                result = BitConverter.GetBytes(DNA);
+                return result;
+            }
+
+            public static byte[] DecodeTransposeBitMatrix(byte[] input)
+            {
+                byte[] result = new byte[8];
+                ulong RNA = 0;
+                ulong DNA = 0;
+                for (int i = 0; i < 8; i++) { result[i] = 0; }
+
+                DNA = BitConverter.ToUInt64(input, 0);
+                RNA = (byte)DNA; DNA = DNA >> 8;
+                for (int i = 7; i >= 0; i--)
+                {
+                    result[i] = (byte)((DNA & 127) + (RNA & 128));
+                    DNA = DNA >> 7;
+                    RNA = RNA << 1;
+                }
+                return result;
+            }
+
+
+
+            /// <summary>
+            /// Mixing Bytes in two arrays 256+256 = 512
+            /// </summary>
+            /// <param name="Mb"></param>
+            /// <param name="K1"></param>
+            /// <param name="K2"></param>
+            public static void MixByteArr512(byte[] Mb, byte K1 = 0xAA, byte K2 = 0x33)
+            {
+
+                byte A;
+                if (Mb.Length == 512) { return; };
+                for (int i = 0; i < 256; i++)
+                { // Reversibly shuffled the block by 512
+                    A = Mb[(byte)(i ^ K1)];
+                    Mb[(byte)(i ^ K1)] = Mb[256 + (byte)(i ^ K2)];
+                    Mb[256 + (byte)(i ^ K2)] = A;
+
+                }
+
+            }
+            public static void UnMixByteArr512(byte[] Mb, byte K1 = 0xAA, byte K2 = 0x33)
+            {
+                MixByteArr512(Mb, K1, K2);
+            }
+
+
+
+        }
+
+
+    }
+
+
+}
