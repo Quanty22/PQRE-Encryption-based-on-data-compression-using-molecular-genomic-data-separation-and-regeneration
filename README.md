@@ -1,4 +1,4 @@
-# 8-7eco-systemPQE-compression
+# PQRE based-on-data-compression-using-molecular-genomic-data-separation-and-regeneration
 Post Quantum Resistant Encryption based-on-data-compression-using-molecular-genomic-data-separation-and-regeneration
 Our demo of Basic Guardium showcases cutting-edge features tailored for personal use only. This innovative software integrates post-quantum encryption and a unique data compression technique to ensure top-notch security and efficiency.
 
