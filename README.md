@@ -4,7 +4,7 @@ Our demo of Basic Guardium showcases cutting-edge features tailored for personal
 
 It's worth noting that Basic Guardium is open-source, allowing users to freely utilize and modify it according to their preferences. However, due to our ecosystem's security measures, each individual is granted a unique ID number, preventing distribution to others.
 
-Guardium offers three distinct versions, each catering to different user needs:
+Guardium basic (always free of any cost) offers three distinct versions, each catering to different user needs:
 
 Basic Version: Designed for swift and secure encryption and compression of personal data. Already 2.3 times faster than current encryption methods, this version comes equipped with a built-in data compressor for enhanced efficiency.
 
@@ -17,3 +17,4 @@ Our Vector and Dimension versions are meticulously crafted to meet the unique cy
 With Vector and Dimension, enjoy unlimited user additions, ensuring scalability to accommodate your company's growth. Our solutions also guarantee worldwide compliance and provide robust data transmission security for remote work setups.
 
 Get in touch with us today to schedule a company demo and explore our flexible licensing options tailored to suit your needs
+https://eighttoseven.com/
